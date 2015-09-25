@@ -1,0 +1,172 @@
+---
+title: "Practical Machine Learning"
+author: "Stefan Moser"
+date: "24. September 2015"
+output: html_document
+---
+
+###Question
+
+This is a course project of a MOOC in coursera called "Practical Machine Learning". Large amount of data about personal activity has been provided to find patterns of individual health behaviours.
+
+In this project, the target will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+
+###Input Data
+
+###### Preparing the data and R packages
+```{r, message=FALSE}
+#Load packages
+library(AppliedPredictiveModeling)
+library(caret)
+library(rattle)
+library(rpart.plot)
+library(randomForest)
+```
+
+
+#####The first step is to import the data and to verify that the training data and the test data are identical.
+
+
+```{r, message=FALSE}
+#cleaning worksapace
+rm(list = ls())
+
+#set path
+path <- "D:/Studio/Course"
+
+#read csv training data
+file_training <- "pml-training.csv"
+df_training <- read.csv(file_training, na.strings=c("NA",""), header=TRUE)
+colnames_train <- colnames(df_training)
+
+#read csv testing data
+file_testing <- "pml-testing.csv"
+df_testing <- read.csv(file_testing, na.strings=c("NA",""), header=TRUE)
+colnames_test <- colnames(df_testing)
+
+#Verify that the column names (excluding classe and problem_id) are identical in the training and test set.
+all.equal(colnames_train[1:length(colnames_train)-1], colnames_test[1:length(colnames_train)-1])
+```
+
+
+###features
+
+#####After I have ckecked  the schema of both the training and testing sets are identical, I decided to delet NA columns and other extraneous columns.
+
+```{r, message=FALSE}
+# Count the number of non-NAs in each col.
+nonNAs <- function(x) {
+  as.vector(apply(x, 2, function(x) length(which(!is.na(x)))))
+}
+
+# Build vector of missing data or NA columns to drop.
+colcnts <- nonNAs(df_training)
+drops <- c()
+for (cnt in 1:length(colcnts)) {
+  if (colcnts[cnt] < nrow(df_training)) {
+    drops <- c(drops, colnames_train[cnt])
+  }
+}
+
+# Drop NA data and the first 7 columns as they're unnecessary for predicting.
+df_training <- df_training[,!(names(df_training) %in% drops)]
+df_training <- df_training[,8:length(colnames(df_training))]
+
+df_testing <- df_testing[,!(names(df_testing) %in% drops)]
+df_testing <- df_testing[,8:length(colnames(df_testing))]
+
+# check if values without variance
+nzv <- nearZeroVar(df_training , saveMetrics= TRUE)
+nzv
+
+
+# Show remaining columns.
+colnames(df_training)
+
+# Show remaining columns.
+colnames(df_testing)
+```
+
+
+
+###algorithm
+
+```{r, message=FALSE}
+
+#Now we have  a large training set (19,622 entries) and a small testing set (20 entries). I decided to split the training set into a df_pretraining set (40%) and a df_pretesting set (60%). I decided this approach, because the later choosen algorithm will work faster and I can test the algorithm with my pre_testing set
+
+# Divide the given training set into parts
+set.seed(1000)
+inTrain <- createDataPartition(y=df_training$classe, p=0.4, list=FALSE)
+df_pretraining <- df_training[inTrain,]
+df_pretesting <- df_training[-inTrain,]
+```
+
+
+###parameters
+
+#####I decided to try the methods preprocessing and cross validation. In my first test I have noticed, that this methods only have an accuracy smaller 0.6.
+
+#####The result is too bad, so I attempt random forest with cross validation. You can see the results in the evaluation part 
+
+
+
+###evaluation
+
+```{r, message=FALSE}
+# Check correlations
+chkCor <- abs(cor(df_training[,-c(ncol(df_training))]))
+diag(chkCor) <- 0
+which(chkCor > 0.95,arr.ind=T)
+
+# Train on pretraining Data
+set.seed(1000)
+modFit <- train(df_pretraining$classe ~ ., data = df_pretraining, method="rpart")
+print(modFit, digits=3)
+
+print(modFit$finalModel, digits=3)
+fancyRpartPlot(modFit$finalModel)
+
+
+# Train on pretraining only preprocessing.
+set.seed(1000)
+modFit <- train(df_pretraining$classe ~ .,  preProcess=c("center", "scale"), data = df_pretraining, method="rpart")
+print(modFit, digits=3)
+
+
+# Train on pretraining set both preprocessing and cross validation.
+set.seed(1000)
+modFit <- train(df_pretraining$classe ~ .,  preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 5), data = df_pretraining, method="rpart")
+print(modFit, digits=3)
+
+# Run against pretesting set with both preprocessing and cross validation.
+predictions <- predict(modFit, newdata=df_pretesting)
+print(confusionMatrix(predictions, df_pretesting$classe), digits=4)
+
+
+#Random Forest
+# Train on training with only cross validation.
+modFit <-train(classe~.,data=df_pretraining,method="rf",
+                trControl=trainControl(method="cv",number=4),
+                prox=TRUE,allowParallel=TRUE )
+print(modFit, digits=3)
+
+
+
+# Run against pretesting 
+predictions <- predict(modFit, newdata=df_pretesting)
+print(confusionMatrix(predictions, df_pretesting$classe), digits=4)
+
+# Run against 20 testing 
+print(predict(modFit, newdata=df_testing))
+```
+
+
+
+
+
+
+
+
+
